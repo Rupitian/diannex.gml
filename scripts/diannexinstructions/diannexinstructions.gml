@@ -102,15 +102,15 @@ enum DiannexOpcode
     textrun = 0x4E, // Pauses the interpreter, running a line of text from the stack
 }
 
-function __diannex_init_opcodes()
+function __diannex_get_opcodes()
 {
-	static initialized = false;
-	if (initialized)
-		return;
+	static opcodes = undefined;
+	if (!is_undefined(opcodes))
+		return opcodes;
 	
-	global.__diannex_opcodes = array_create(256, function() { programCounter++; });
+	opcodes = array_create(256, function() { programCounter++; });
 
-	global.__diannex_opcodes[DiannexOpcode.freeloc] = function()
+	opcodes[DiannexOpcode.freeloc] = function()
 	{
 		programCounter += 5;
 	
@@ -130,45 +130,45 @@ function __diannex_init_opcodes()
 		}
 	};
 
-	global.__diannex_opcodes[DiannexOpcode.save] = function()
+	opcodes[DiannexOpcode.save] = function()
 	{
 		programCounter++;
 		saveRegister = ds_stack_top(stack);
 	};
 
-	global.__diannex_opcodes[DiannexOpcode.load] = function()
+	opcodes[DiannexOpcode.load] = function()
 	{
 		programCounter++;
 		ds_stack_push(stack, saveRegister);
 		saveRegister = undefined;
 	};
 
-	global.__diannex_opcodes[DiannexOpcode.pushu] = function()
+	opcodes[DiannexOpcode.pushu] = function()
 	{
 		programCounter++;
 		ds_stack_push(stack, new DiannexValue(undefined, DiannexValueType.Undefined));
 	};
 
-	global.__diannex_opcodes[DiannexOpcode.pushi] = function()
+	opcodes[DiannexOpcode.pushi] = function()
 	{
 		programCounter += 5;
 		ds_stack_push(stack, new DiannexValue(buffer_read(data.instructions, buffer_s32), DiannexValueType.Integer));
 	};
 
-	global.__diannex_opcodes[DiannexOpcode.pushd] = function()
+	opcodes[DiannexOpcode.pushd] = function()
 	{
 		programCounter += 9;
 		ds_stack_push(stack, new DiannexValue(buffer_read(data.instructions, buffer_f64), DiannexValueType.Double));
 	};
 
 
-	global.__diannex_opcodes[DiannexOpcode.pushs] = function()
+	opcodes[DiannexOpcode.pushs] = function()
 	{
 		programCounter += 5;
 		ds_stack_push(stack, new DiannexValue(data.text[buffer_read(data.instructions, buffer_s32)], DiannexValueType.String));
 	};
 
-	global.__diannex_opcodes[DiannexOpcode.pushints] = function()
+	opcodes[DiannexOpcode.pushints] = function()
 	{
 		programCounter += 9;
 		var str = data.text[buffer_read(data.instructions, buffer_s32)];
@@ -180,13 +180,13 @@ function __diannex_init_opcodes()
 		ds_stack_push(stack, new DiannexValue(interpolateString(str, elems), DiannexValueType.String));
 	};
 
-	global.__diannex_opcodes[DiannexOpcode.pushbs] = function()
+	opcodes[DiannexOpcode.pushbs] = function()
 	{
 		programCounter += 5;
 		ds_stack_push(stack, new DiannexValue(data.strings[buffer_read(data.instructions, buffer_s32)], DiannexValueType.String));
 	};
 
-	global.__diannex_opcodes[DiannexOpcode.pushbints] = function()
+	opcodes[DiannexOpcode.pushbints] = function()
 	{
 		programCounter += 9;
 		var str = data.strings[buffer_read(data.instructions, buffer_s32)];
@@ -199,7 +199,7 @@ function __diannex_init_opcodes()
 	};
 
 
-	global.__diannex_opcodes[DiannexOpcode.makearr] = function()
+	opcodes[DiannexOpcode.makearr] = function()
 	{
 		programCounter += 5;
 		var arg = buffer_read(data.instructions, buffer_s32);
@@ -209,7 +209,7 @@ function __diannex_init_opcodes()
 		ds_stack_push(stack, new DiannexValue(arr, DiannexValueType.Array));
 	};
 
-	global.__diannex_opcodes[DiannexOpcode.pusharrind] = function()
+	opcodes[DiannexOpcode.pusharrind] = function()
 	{
 		programCounter++;
 		var ind = ds_stack_pop(stack).convert(DiannexValueType.Integer).getRawValue();
@@ -219,7 +219,7 @@ function __diannex_init_opcodes()
 		ds_stack_push(stack, arr.value[ind]);
 	};
 
-	global.__diannex_opcodes[DiannexOpcode.setarrind] = function()
+	opcodes[DiannexOpcode.setarrind] = function()
 	{
 		programCounter++;
 		var value = ds_stack_pop(stack);
@@ -230,13 +230,13 @@ function __diannex_init_opcodes()
 		arr.value[ind] = value;
 	};
 
-	global.__diannex_opcodes[DiannexOpcode.setvarglb] = function()
+	opcodes[DiannexOpcode.setvarglb] = function()
 	{
 		programCounter += 5;
 		variableSetHandler(data.strings[buffer_read(data.instructions, buffer_s32)], ds_stack_pop(stack).getRawValue());
 	};
 
-	global.__diannex_opcodes[DiannexOpcode.setvarloc] = function()
+	opcodes[DiannexOpcode.setvarloc] = function()
 	{
 		programCounter += 5;
 		var value = ds_stack_pop(stack);
@@ -259,13 +259,13 @@ function __diannex_init_opcodes()
 		}
 	};
 
-	global.__diannex_opcodes[DiannexOpcode.pushvarglb] = function()
+	opcodes[DiannexOpcode.pushvarglb] = function()
 	{
 		programCounter += 5;
 		ds_stack_push(stack, variableGetHandler(data.strings[buffer_read(data.instructions, buffer_s32)]));
 	};
 
-	global.__diannex_opcodes[DiannexOpcode.pushvarloc] = function()
+	opcodes[DiannexOpcode.pushvarloc] = function()
 	{
 		programCounter += 5;
 		var argIndex = buffer_read(data.instructions, buffer_s32);
@@ -274,13 +274,13 @@ function __diannex_init_opcodes()
 		ds_stack_push(stack, locals[| argIndex]);
 	};
 
-	global.__diannex_opcodes[DiannexOpcode.dup] = function()
+	opcodes[DiannexOpcode.dup] = function()
 	{
 		programCounter++;
 		ds_stack_push(stack, ds_stack_top(stack));
 	};
 
-	global.__diannex_opcodes[DiannexOpcode.dup2] = function()
+	opcodes[DiannexOpcode.dup2] = function()
 	{
 		programCounter++;
 		var val1 = ds_stack_pop(stack);
@@ -291,7 +291,7 @@ function __diannex_init_opcodes()
 		ds_stack_push(stack, val1);
 	};
 
-	global.__diannex_opcodes[DiannexOpcode.add] = function()
+	opcodes[DiannexOpcode.add] = function()
 	{				
 		programCounter++;
 		var val2 = ds_stack_pop(stack);
@@ -302,7 +302,7 @@ function __diannex_init_opcodes()
 			ds_stack_push(stack, val1.convert(val2.type).add(val2));
 	};
 
-	global.__diannex_opcodes[DiannexOpcode.sub] = function()
+	opcodes[DiannexOpcode.sub] = function()
 	{				
 		programCounter++;
 		var val2 = ds_stack_pop(stack);
@@ -313,7 +313,7 @@ function __diannex_init_opcodes()
 			ds_stack_push(stack, val1.convert(val2.type).subtract(val2));
 	};
 
-	global.__diannex_opcodes[DiannexOpcode.mul] = function()
+	opcodes[DiannexOpcode.mul] = function()
 	{				
 		programCounter++;
 		var val2 = ds_stack_pop(stack);
@@ -324,7 +324,7 @@ function __diannex_init_opcodes()
 			ds_stack_push(stack, val1.convert(val2.type).multiply(val2));
 	};
 
-	global.__diannex_opcodes[DiannexOpcode._div] = function()
+	opcodes[DiannexOpcode._div] = function()
 	{				
 		programCounter++;
 		var val2 = ds_stack_pop(stack);
@@ -335,7 +335,7 @@ function __diannex_init_opcodes()
 			ds_stack_push(stack, val1.convert(val2.type).divide(val2));
 	};
 
-	global.__diannex_opcodes[DiannexOpcode._mod] = function()
+	opcodes[DiannexOpcode._mod] = function()
 	{				
 		programCounter++;
 		var val2 = ds_stack_pop(stack);
@@ -346,7 +346,7 @@ function __diannex_init_opcodes()
 			ds_stack_push(stack, val1.convert(val2.type).modulo(val2));
 	};
 
-	global.__diannex_opcodes[DiannexOpcode.neg] = function()
+	opcodes[DiannexOpcode.neg] = function()
 	{
 		programCounter++;
 		var val1 = ds_stack_pop(stack);
@@ -363,7 +363,7 @@ function __diannex_init_opcodes()
 		}
 	};
 
-	global.__diannex_opcodes[DiannexOpcode.inv] = function()
+	opcodes[DiannexOpcode.inv] = function()
 	{
 		programCounter++;
 		var val1 = ds_stack_pop(stack);
@@ -380,7 +380,7 @@ function __diannex_init_opcodes()
 		}
 	};
 
-	global.__diannex_opcodes[DiannexOpcode.bitls] = function()
+	opcodes[DiannexOpcode.bitls] = function()
 	{			
 		programCounter++;
 		var val2 = ds_stack_pop(stack);
@@ -388,7 +388,7 @@ function __diannex_init_opcodes()
 		ds_stack_push(stack, new DiannexValue(val1.convert(DiannexValueType.Integer).value << val2.convert(DiannexValueType.Integer).value, DiannexValueType.Integer));
 	};
 
-	global.__diannex_opcodes[DiannexOpcode.bitrs] = function()
+	opcodes[DiannexOpcode.bitrs] = function()
 	{			
 		programCounter++;
 		var val2 = ds_stack_pop(stack);
@@ -396,7 +396,7 @@ function __diannex_init_opcodes()
 		ds_stack_push(stack, new DiannexValue(val1.convert(DiannexValueType.Integer).value >> val2.convert(DiannexValueType.Integer).value, DiannexValueType.Integer));
 	};
 
-	global.__diannex_opcodes[DiannexOpcode._bitand] = function()
+	opcodes[DiannexOpcode._bitand] = function()
 	{
 		programCounter++;
 		var val2 = ds_stack_pop(stack);
@@ -404,7 +404,7 @@ function __diannex_init_opcodes()
 		ds_stack_push(stack, new DiannexValue(val1.convert(DiannexValueType.Integer).value & val2.convert(DiannexValueType.Integer).value, DiannexValueType.Integer));
 	};
 
-	global.__diannex_opcodes[DiannexOpcode._bitor] = function()
+	opcodes[DiannexOpcode._bitor] = function()
 	{
 		programCounter++;
 		var val2 = ds_stack_pop(stack);
@@ -412,7 +412,7 @@ function __diannex_init_opcodes()
 		ds_stack_push(stack, new DiannexValue(val1.convert(DiannexValueType.Integer).value | val2.convert(DiannexValueType.Integer).value, DiannexValueType.Integer));
 	};
 
-	global.__diannex_opcodes[DiannexOpcode.bitxor] = function()
+	opcodes[DiannexOpcode.bitxor] = function()
 	{
 		programCounter++;
 		var val2 = ds_stack_pop(stack);
@@ -420,13 +420,13 @@ function __diannex_init_opcodes()
 		ds_stack_push(stack, new DiannexValue(val1.convert(DiannexValueType.Integer).value ^ val2.convert(DiannexValueType.Integer).value, DiannexValueType.Integer));
 	};
 
-	global.__diannex_opcodes[DiannexOpcode.bitneg] = function()
+	opcodes[DiannexOpcode.bitneg] = function()
 	{
 		programCounter++;
 		ds_stack_push(stack, new DiannexValue(~(ds_stack_pop(stack).convert(DiannexValueType.Integer).value), DiannexValueType.Integer));
 	};
 
-	global.__diannex_opcodes[DiannexOpcode.pow] = function()
+	opcodes[DiannexOpcode.pow] = function()
 	{
 		programCounter++;
 		var val2 = ds_stack_pop(stack);
@@ -434,7 +434,7 @@ function __diannex_init_opcodes()
 		ds_stack_push(stack, new DiannexValue(power(val1.convert(DiannexValueType.Double).value, val2.convert(DiannexValueType.Double).value), DiannexValueType.Double));
 	};
 
-	global.__diannex_opcodes[DiannexOpcode.cmpeq] = function()
+	opcodes[DiannexOpcode.cmpeq] = function()
 	{				
 		programCounter++;
 		var val2 = ds_stack_pop(stack);
@@ -445,7 +445,7 @@ function __diannex_init_opcodes()
 			ds_stack_push(stack, val1.convert(val2.type).compareEQ(val2));
 	};
 
-	global.__diannex_opcodes[DiannexOpcode.cmpgt] = function()
+	opcodes[DiannexOpcode.cmpgt] = function()
 	{				
 		programCounter++;
 		var val2 = ds_stack_pop(stack);
@@ -456,7 +456,7 @@ function __diannex_init_opcodes()
 			ds_stack_push(stack, val1.convert(val2.type).compareGT(val2));
 	};
 
-	global.__diannex_opcodes[DiannexOpcode.cmplt] = function()
+	opcodes[DiannexOpcode.cmplt] = function()
 	{				
 		programCounter++;
 		var val2 = ds_stack_pop(stack);
@@ -467,7 +467,7 @@ function __diannex_init_opcodes()
 			ds_stack_push(stack, val1.convert(val2.type).compareLT(val2));
 	};
 
-	global.__diannex_opcodes[DiannexOpcode.cmpgte] = function()
+	opcodes[DiannexOpcode.cmpgte] = function()
 	{				
 		programCounter++;
 		var val2 = ds_stack_pop(stack);
@@ -478,7 +478,7 @@ function __diannex_init_opcodes()
 			ds_stack_push(stack, val1.convert(val2.type).compareGTE(val2));
 	};
 
-	global.__diannex_opcodes[DiannexOpcode.cmplte] = function()
+	opcodes[DiannexOpcode.cmplte] = function()
 	{				
 		programCounter++;
 		var val2 = ds_stack_pop(stack);
@@ -489,7 +489,7 @@ function __diannex_init_opcodes()
 			ds_stack_push(stack, val1.convert(val2.type).compareLTE(val2));
 	};
 
-	global.__diannex_opcodes[DiannexOpcode.cmpneq] = function()
+	opcodes[DiannexOpcode.cmpneq] = function()
 	{				
 		programCounter++;
 		var val2 = ds_stack_pop(stack);
@@ -500,13 +500,13 @@ function __diannex_init_opcodes()
 			ds_stack_push(stack, val1.convert(val2.type).compareNEQ(val2));
 	};
 
-	global.__diannex_opcodes[DiannexOpcode.j] = function()
+	opcodes[DiannexOpcode.j] = function()
 	{
 		programCounter += (5 + buffer_read(data.instructions, buffer_s32));
 	
 	};
 
-	global.__diannex_opcodes[DiannexOpcode.jt] = function()
+	opcodes[DiannexOpcode.jt] = function()
 	{
 		var argJump = buffer_read(data.instructions, buffer_s32);
 		if (ds_stack_pop(stack).convert(DiannexValueType.Integer).value != 0)
@@ -515,7 +515,7 @@ function __diannex_init_opcodes()
 			programCounter += 5;
 	};
 
-	global.__diannex_opcodes[DiannexOpcode.jf] = function()
+	opcodes[DiannexOpcode.jf] = function()
 	{
 		var argJump = buffer_read(data.instructions, buffer_s32);
 		if (ds_stack_pop(stack).convert(DiannexValueType.Integer).value == 0)
@@ -524,7 +524,7 @@ function __diannex_init_opcodes()
 			programCounter += 5;
 	};
 
-	global.__diannex_opcodes[DiannexOpcode._exit] = function()
+	opcodes[DiannexOpcode._exit] = function()
 	{
 		programCounter++;
 		if (state == DiannexInterpreterState.Eval)
@@ -556,7 +556,7 @@ function __diannex_init_opcodes()
 		}
 	};
 
-	global.__diannex_opcodes[DiannexOpcode.ret] = function()
+	opcodes[DiannexOpcode.ret] = function()
 	{
 		programCounter++;
 	
@@ -582,7 +582,7 @@ function __diannex_init_opcodes()
 		}
 	};
 
-	global.__diannex_opcodes[DiannexOpcode.call] = function()
+	opcodes[DiannexOpcode.call] = function()
 	{
 		programCounter += 9;
 	
@@ -610,7 +610,7 @@ function __diannex_init_opcodes()
 			ds_list_add(locals, args[i]);
 	};
 
-	global.__diannex_opcodes[DiannexOpcode.callext] = function()
+	opcodes[DiannexOpcode.callext] = function()
 	{
 		programCounter += 9;
 	
@@ -625,7 +625,7 @@ function __diannex_init_opcodes()
 		ds_stack_push(stack, new DiannexValue(script_execute_ext(handler, args)));
 	};
 
-	global.__diannex_opcodes[DiannexOpcode.choicebeg] = function()
+	opcodes[DiannexOpcode.choicebeg] = function()
 	{
 		if (state != DiannexInterpreterState.Running || startingChoice)
 			throw "Invalid choice begin state";
@@ -634,7 +634,7 @@ function __diannex_init_opcodes()
 		startingChoice = true;
 	};
 
-	global.__diannex_opcodes[DiannexOpcode.choiceadd] = function()
+	opcodes[DiannexOpcode.choiceadd] = function()
 	{
 		if (!startingChoice)
 			throw "Invalid choice add state";
@@ -648,7 +648,7 @@ function __diannex_init_opcodes()
 		startingChoice = true;
 	};
 
-	global.__diannex_opcodes[DiannexOpcode.choiceaddt] = function()
+	opcodes[DiannexOpcode.choiceaddt] = function()
 	{
 		if (!startingChoice)
 			throw "Invalid choice add state";
@@ -663,7 +663,7 @@ function __diannex_init_opcodes()
 		startingChoice = true;
 	};
 
-	global.__diannex_opcodes[DiannexOpcode.choicesel] = function()
+	opcodes[DiannexOpcode.choicesel] = function()
 	{
 		programCounter++;
 	
@@ -682,14 +682,14 @@ function __diannex_init_opcodes()
 		choiceHandler(textChoices);
 	};
 
-	global.__diannex_opcodes[DiannexOpcode.chooseadd] = function(buff)
+	opcodes[DiannexOpcode.chooseadd] = function(buff)
 	{
 		programCounter += 5;
 		ds_list_add(chooseOptions, new DiannexChooseEntry(programCounter + buffer_read(buff, buffer_s32), 
 													      ds_stack_pop(stack).convert(DiannexValueType.Double).value));
 	};
 
-	global.__diannex_opcodes[DiannexOpcode.chooseaddt] = function(buff)
+	opcodes[DiannexOpcode.chooseaddt] = function(buff)
 	{
 		programCounter += 5;
 		var condition = ds_stack_pop(stack).convert(DiannexValueType.Integer).value;
@@ -698,7 +698,7 @@ function __diannex_init_opcodes()
 			ds_list_add(chooseOptions, new DiannexChooseEntry(programCounter + buffer_read(buff, buffer_s32), chance));
 	};
 
-	global.__diannex_opcodes[DiannexOpcode.choosesel] = function(buff)
+	opcodes[DiannexOpcode.choosesel] = function(buff)
 	{
 		programCounter++;
 	
@@ -714,7 +714,7 @@ function __diannex_init_opcodes()
 		ds_list_clear(chooseOptions);
 	};
 
-	global.__diannex_opcodes[DiannexOpcode.textrun] = function()
+	opcodes[DiannexOpcode.textrun] = function()
 	{
 		if (state != DiannexInterpreterState.Running)
 			throw "Invalid text run state";
@@ -724,5 +724,5 @@ function __diannex_init_opcodes()
 		textHandler(ds_stack_pop(stack).convert(DiannexValueType.String).getRawValue());
 	};
 	
-	initialized = true;
+	return opcodes;
 }

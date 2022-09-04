@@ -126,10 +126,10 @@ function DiannexInterpreter(binary) constructor
 	// Virtual machine
 	state = DiannexInterpreterState.Inactive;
 	programCounter = -1;
-	__diannex_init_opcodes();
+	var globalOpcodes = __diannex_get_opcodes();
 	opcodes = array_create(256);
 	for (var i = 0; i < 256; i++)
-		opcodes[i] = method(self, global.__diannex_opcodes[i]);
+		opcodes[i] = method(self, globalOpcodes[i]);
 	stack = ds_stack_create();
 	callStack = ds_stack_create();
 	locals = ds_list_create();

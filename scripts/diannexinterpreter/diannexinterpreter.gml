@@ -126,6 +126,7 @@ function DiannexInterpreter(binary) constructor
 	// Virtual machine
 	state = DiannexInterpreterState.Inactive;
 	programCounter = -1;
+	__diannex_init_opcodes();
 	opcodes = array_create(256);
 	for (var i = 0; i < 256; i++)
 		opcodes[i] = method(self, global.__diannex_opcodes[i]);

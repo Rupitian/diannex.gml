@@ -102,432 +102,464 @@ enum DiannexOpcode
     textrun = 0x4E, // Pauses the interpreter, running a line of text from the stack
 }
 
-global.__diannex_opcodes = array_create(256, function() { programCounter++; });
-
-global.__diannex_opcodes[DiannexOpcode.freeloc] = function()
+function __diannex_init_opcodes()
 {
-	programCounter += 5;
+	static initialized = false;
+	if (initialized)
+		return;
 	
-	var argIndex = buffer_read(data.instructions, buffer_s32);
-	if (argIndex == ds_list_size(locals) - 1)
+	global.__diannex_opcodes = array_create(256, function() { programCounter++; });
+
+	global.__diannex_opcodes[DiannexOpcode.freeloc] = function()
 	{
-		if (argIndex < flagCount)
+		programCounter += 5;
+	
+		var argIndex = buffer_read(data.instructions, buffer_s32);
+		if (argIndex == ds_list_size(locals) - 1)
 		{
-			// We're freeing an index which is one of the special "flag" locals
-			var value = locals[| argIndex].getRawValue();
-			if (!data.flagsInitialized)
-				throw "Flags not initialized before being used by an interpreter";
-			data.setFlagHandler(currentScene.flagNames[argIndex], value);
-		}
+			if (argIndex < flagCount)
+			{
+				// We're freeing an index which is one of the special "flag" locals
+				var value = locals[| argIndex].getRawValue();
+				if (!data.flagsInitialized)
+					throw "Flags not initialized before being used by an interpreter";
+				data.setFlagHandler(currentScene.flagNames[argIndex], value);
+			}
 				
-		ds_list_delete(locals, argIndex);
-	}
-};
+			ds_list_delete(locals, argIndex);
+		}
+	};
 
-global.__diannex_opcodes[DiannexOpcode.save] = function()
-{
-	programCounter++;
-	saveRegister = ds_stack_top(stack);
-};
-
-global.__diannex_opcodes[DiannexOpcode.load] = function()
-{
-	programCounter++;
-	ds_stack_push(stack, saveRegister);
-	saveRegister = undefined;
-};
-
-global.__diannex_opcodes[DiannexOpcode.pushu] = function()
-{
-	programCounter++;
-	ds_stack_push(stack, new DiannexValue(undefined, DiannexValueType.Undefined));
-};
-
-global.__diannex_opcodes[DiannexOpcode.pushi] = function()
-{
-	programCounter += 5;
-	ds_stack_push(stack, new DiannexValue(buffer_read(data.instructions, buffer_s32), DiannexValueType.Integer));
-};
-
-global.__diannex_opcodes[DiannexOpcode.pushd] = function()
-{
-	programCounter += 9;
-	ds_stack_push(stack, new DiannexValue(buffer_read(data.instructions, buffer_f64), DiannexValueType.Double));
-};
-
-
-global.__diannex_opcodes[DiannexOpcode.pushs] = function()
-{
-	programCounter += 5;
-	ds_stack_push(stack, new DiannexValue(data.text[buffer_read(data.instructions, buffer_s32)], DiannexValueType.String));
-};
-
-global.__diannex_opcodes[DiannexOpcode.pushints] = function()
-{
-	programCounter += 9;
-	var str = data.text[buffer_read(data.instructions, buffer_s32)];
-	var numElems = buffer_read(data.instructions, buffer_s32);
-	var i = 0;
-	var elems = array_create(numElems);
-	repeat (numElems)
-		elems[i++] = string(ds_stack_pop(stack).getRawValue());
-	ds_stack_push(stack, new DiannexValue(interpolateString(str, elems), DiannexValueType.String));
-};
-
-global.__diannex_opcodes[DiannexOpcode.pushbs] = function()
-{
-	programCounter += 5;
-	ds_stack_push(stack, new DiannexValue(data.strings[buffer_read(data.instructions, buffer_s32)], DiannexValueType.String));
-};
-
-global.__diannex_opcodes[DiannexOpcode.pushbints] = function()
-{
-	programCounter += 9;
-	var str = data.strings[buffer_read(data.instructions, buffer_s32)];
-	var numElems = buffer_read(data.instructions, buffer_s32);
-	var i = 0;
-	var elems = array_create(numElems);
-	repeat (numElems)
-		elems[i++] = string(ds_stack_pop(stack).getRawValue());
-	ds_stack_push(stack, new DiannexValue(interpolateString(str, elems), DiannexValueType.String));
-};
-
-
-global.__diannex_opcodes[DiannexOpcode.makearr] = function()
-{
-	programCounter += 5;
-	var arg = buffer_read(data.instructions, buffer_s32);
-	var arr = array_create(arg);
-	for (var i = arg - 1; i >= 0; i--)
-		arr[i] = ds_stack_pop(stack);
-	ds_stack_push(stack, new DiannexValue(arr, DiannexValueType.Array));
-};
-
-global.__diannex_opcodes[DiannexOpcode.pusharrind] = function()
-{
-	programCounter++;
-	var ind = ds_stack_pop(stack).convert(DiannexValueType.Integer).getRawValue();
-	var arr = ds_stack_pop(stack);
-	if (arr.type != DiannexValueType.Array)
-		throw "Array get on variable which is not an array";
-	ds_stack_push(stack, arr.value[ind]);
-};
-
-global.__diannex_opcodes[DiannexOpcode.setarrind] = function()
-{
-	programCounter++;
-	var value = ds_stack_pop(stack);
-	var ind = ds_stack_pop(stack).convert(DiannexValueType.Integer).getRawValue();
-	var arr = ds_stack_top(stack);
-	if (arr.type != DiannexValueType.Array)
-		throw "Array set on variable which is not an array";
-	arr.value[ind] = value;
-};
-
-global.__diannex_opcodes[DiannexOpcode.setvarglb] = function()
-{
-	programCounter += 5;
-	variableSetHandler(data.strings[buffer_read(data.instructions, buffer_s32)], ds_stack_pop(stack).getRawValue());
-};
-
-global.__diannex_opcodes[DiannexOpcode.setvarloc] = function()
-{
-	programCounter += 5;
-	var value = ds_stack_pop(stack);
-	var count = ds_list_size(locals);
-	
-	var argIndex = buffer_read(data.instructions, buffer_s32);
-	if (argIndex >= count)
+	global.__diannex_opcodes[DiannexOpcode.save] = function()
 	{
-		// Fill earlier local slots if necessary
-		repeat (argIndex - count)
-			ds_list_add(locals, new DiannexValue(undefined, DiannexValueType.Undefined));
-		
-		// Add new local
-		ds_list_add(locals, value);
-	}
-	else
+		programCounter++;
+		saveRegister = ds_stack_top(stack);
+	};
+
+	global.__diannex_opcodes[DiannexOpcode.load] = function()
 	{
-		// Set existing local
-		locals[| argIndex] = value;
-	}
-};
+		programCounter++;
+		ds_stack_push(stack, saveRegister);
+		saveRegister = undefined;
+	};
 
-global.__diannex_opcodes[DiannexOpcode.pushvarglb] = function()
-{
-	programCounter += 5;
-	ds_stack_push(stack, variableGetHandler(data.strings[buffer_read(data.instructions, buffer_s32)]));
-};
-
-global.__diannex_opcodes[DiannexOpcode.pushvarloc] = function()
-{
-	programCounter += 5;
-	var argIndex = buffer_read(data.instructions, buffer_s32);
-	if (argIndex >= ds_list_size(locals))
+	global.__diannex_opcodes[DiannexOpcode.pushu] = function()
+	{
+		programCounter++;
 		ds_stack_push(stack, new DiannexValue(undefined, DiannexValueType.Undefined));
-	ds_stack_push(stack, locals[| argIndex]);
-};
+	};
 
-global.__diannex_opcodes[DiannexOpcode.dup] = function()
-{
-	programCounter++;
-	ds_stack_push(stack, ds_stack_top(stack));
-};
-
-global.__diannex_opcodes[DiannexOpcode.dup2] = function()
-{
-	programCounter++;
-	var val1 = ds_stack_pop(stack);
-	var val2 = ds_stack_pop(stack);
-	ds_stack_push(stack, val2);
-	ds_stack_push(stack, val1);
-	ds_stack_push(stack, val2);
-	ds_stack_push(stack, val1);
-};
-
-global.__diannex_opcodes[DiannexOpcode.add] = function()
-{				
-	programCounter++;
-	var val2 = ds_stack_pop(stack);
-	var val1 = ds_stack_pop(stack);
-	if (val1.type == DiannexValueType.String || (val1.type == DiannexValueType.Double && val2.type == DiannexValueType.Integer))
-		ds_stack_push(stack, val1.add(val2.convert(val1.type)));
-	else
-		ds_stack_push(stack, val1.convert(val2.type).add(val2));
-};
-
-global.__diannex_opcodes[DiannexOpcode.sub] = function()
-{				
-	programCounter++;
-	var val2 = ds_stack_pop(stack);
-	var val1 = ds_stack_pop(stack);
-	if (val1.type == DiannexValueType.Double && val2.type == DiannexValueType.Integer)
-		ds_stack_push(stack, val1.subtract(val2.convert(val1.type)));
-	else
-		ds_stack_push(stack, val1.convert(val2.type).subtract(val2));
-};
-
-global.__diannex_opcodes[DiannexOpcode.mul] = function()
-{				
-	programCounter++;
-	var val2 = ds_stack_pop(stack);
-	var val1 = ds_stack_pop(stack);
-	if (val1.type == DiannexValueType.Double && val2.type == DiannexValueType.Integer)
-		ds_stack_push(stack, val1.multiply(val2.convert(val1.type)));
-	else
-		ds_stack_push(stack, val1.convert(val2.type).multiply(val2));
-};
-
-global.__diannex_opcodes[DiannexOpcode._div] = function()
-{				
-	programCounter++;
-	var val2 = ds_stack_pop(stack);
-	var val1 = ds_stack_pop(stack);
-	if (val1.type == DiannexValueType.Double && val2.type == DiannexValueType.Integer)
-		ds_stack_push(stack, val1.divide(val2.convert(val1.type)));
-	else
-		ds_stack_push(stack, val1.convert(val2.type).divide(val2));
-};
-
-global.__diannex_opcodes[DiannexOpcode._mod] = function()
-{				
-	programCounter++;
-	var val2 = ds_stack_pop(stack);
-	var val1 = ds_stack_pop(stack);
-	if (val1.type == DiannexValueType.Double && val2.type == DiannexValueType.Integer)
-		ds_stack_push(stack, val1.modulo(val2.convert(val1.type)));
-	else
-		ds_stack_push(stack, val1.convert(val2.type).modulo(val2));
-};
-
-global.__diannex_opcodes[DiannexOpcode.neg] = function()
-{
-	programCounter++;
-	var val1 = ds_stack_pop(stack);
-	switch (val1.type)
+	global.__diannex_opcodes[DiannexOpcode.pushi] = function()
 	{
-		case DiannexValueType.Integer:
-			ds_stack_push(stack, new DiannexValue(-val1.value, DiannexValueType.Integer));
-			break;
-		case DiannexValueType.Double:
-			ds_stack_push(stack, new DiannexValue(-val1.value, DiannexValueType.Double));
-			break;
-		default:
-			throw "Cannot negate type " + __diannex_type_name(val1.type);
-	}
-};
+		programCounter += 5;
+		ds_stack_push(stack, new DiannexValue(buffer_read(data.instructions, buffer_s32), DiannexValueType.Integer));
+	};
 
-global.__diannex_opcodes[DiannexOpcode.inv] = function()
-{
-	programCounter++;
-	var val1 = ds_stack_pop(stack);
-	switch (val1.type)
+	global.__diannex_opcodes[DiannexOpcode.pushd] = function()
 	{
-		case DiannexValueType.Integer:
-			ds_stack_push(stack, new DiannexValue(!val1.value, DiannexValueType.Integer));
-			break;
-		case DiannexValueType.Double:
-			ds_stack_push(stack, new DiannexValue(!val1.value, DiannexValueType.Double));
-			break;
-		default:
-			throw "Cannot invert type " + __diannex_type_name(val1.type);
-	}
-};
+		programCounter += 9;
+		ds_stack_push(stack, new DiannexValue(buffer_read(data.instructions, buffer_f64), DiannexValueType.Double));
+	};
 
-global.__diannex_opcodes[DiannexOpcode.bitls] = function()
-{			
-	programCounter++;
-	var val2 = ds_stack_pop(stack);
-	var val1 = ds_stack_pop(stack);
-	ds_stack_push(stack, new DiannexValue(val1.convert(DiannexValueType.Integer).value << val2.convert(DiannexValueType.Integer).value, DiannexValueType.Integer));
-};
 
-global.__diannex_opcodes[DiannexOpcode.bitrs] = function()
-{			
-	programCounter++;
-	var val2 = ds_stack_pop(stack);
-	var val1 = ds_stack_pop(stack);
-	ds_stack_push(stack, new DiannexValue(val1.convert(DiannexValueType.Integer).value >> val2.convert(DiannexValueType.Integer).value, DiannexValueType.Integer));
-};
+	global.__diannex_opcodes[DiannexOpcode.pushs] = function()
+	{
+		programCounter += 5;
+		ds_stack_push(stack, new DiannexValue(data.text[buffer_read(data.instructions, buffer_s32)], DiannexValueType.String));
+	};
 
-global.__diannex_opcodes[DiannexOpcode._bitand] = function()
-{
-	programCounter++;
-	var val2 = ds_stack_pop(stack);
-	var val1 = ds_stack_pop(stack);
-	ds_stack_push(stack, new DiannexValue(val1.convert(DiannexValueType.Integer).value & val2.convert(DiannexValueType.Integer).value, DiannexValueType.Integer));
-};
+	global.__diannex_opcodes[DiannexOpcode.pushints] = function()
+	{
+		programCounter += 9;
+		var str = data.text[buffer_read(data.instructions, buffer_s32)];
+		var numElems = buffer_read(data.instructions, buffer_s32);
+		var i = 0;
+		var elems = array_create(numElems);
+		repeat (numElems)
+			elems[i++] = string(ds_stack_pop(stack).getRawValue());
+		ds_stack_push(stack, new DiannexValue(interpolateString(str, elems), DiannexValueType.String));
+	};
 
-global.__diannex_opcodes[DiannexOpcode._bitor] = function()
-{
-	programCounter++;
-	var val2 = ds_stack_pop(stack);
-	var val1 = ds_stack_pop(stack);
-	ds_stack_push(stack, new DiannexValue(val1.convert(DiannexValueType.Integer).value | val2.convert(DiannexValueType.Integer).value, DiannexValueType.Integer));
-};
+	global.__diannex_opcodes[DiannexOpcode.pushbs] = function()
+	{
+		programCounter += 5;
+		ds_stack_push(stack, new DiannexValue(data.strings[buffer_read(data.instructions, buffer_s32)], DiannexValueType.String));
+	};
 
-global.__diannex_opcodes[DiannexOpcode.bitxor] = function()
-{
-	programCounter++;
-	var val2 = ds_stack_pop(stack);
-	var val1 = ds_stack_pop(stack);
-	ds_stack_push(stack, new DiannexValue(val1.convert(DiannexValueType.Integer).value ^ val2.convert(DiannexValueType.Integer).value, DiannexValueType.Integer));
-};
+	global.__diannex_opcodes[DiannexOpcode.pushbints] = function()
+	{
+		programCounter += 9;
+		var str = data.strings[buffer_read(data.instructions, buffer_s32)];
+		var numElems = buffer_read(data.instructions, buffer_s32);
+		var i = 0;
+		var elems = array_create(numElems);
+		repeat (numElems)
+			elems[i++] = string(ds_stack_pop(stack).getRawValue());
+		ds_stack_push(stack, new DiannexValue(interpolateString(str, elems), DiannexValueType.String));
+	};
 
-global.__diannex_opcodes[DiannexOpcode.bitneg] = function()
-{
-	programCounter++;
-	ds_stack_push(stack, new DiannexValue(~(ds_stack_pop(stack).convert(DiannexValueType.Integer).value), DiannexValueType.Integer));
-};
 
-global.__diannex_opcodes[DiannexOpcode.pow] = function()
-{
-	programCounter++;
-	var val2 = ds_stack_pop(stack);
-	var val1 = ds_stack_pop(stack);
-	ds_stack_push(stack, new DiannexValue(power(val1.convert(DiannexValueType.Double).value, val2.convert(DiannexValueType.Double).value), DiannexValueType.Double));
-};
+	global.__diannex_opcodes[DiannexOpcode.makearr] = function()
+	{
+		programCounter += 5;
+		var arg = buffer_read(data.instructions, buffer_s32);
+		var arr = array_create(arg);
+		for (var i = arg - 1; i >= 0; i--)
+			arr[i] = ds_stack_pop(stack);
+		ds_stack_push(stack, new DiannexValue(arr, DiannexValueType.Array));
+	};
 
-global.__diannex_opcodes[DiannexOpcode.cmpeq] = function()
-{				
-	programCounter++;
-	var val2 = ds_stack_pop(stack);
-	var val1 = ds_stack_pop(stack);
-	if (val1.type == DiannexValueType.Double && val2.type == DiannexValueType.Integer)
-		ds_stack_push(stack, val1.compareEQ(val2.convert(val1.type)));
-	else
-		ds_stack_push(stack, val1.convert(val2.type).compareEQ(val2));
-};
+	global.__diannex_opcodes[DiannexOpcode.pusharrind] = function()
+	{
+		programCounter++;
+		var ind = ds_stack_pop(stack).convert(DiannexValueType.Integer).getRawValue();
+		var arr = ds_stack_pop(stack);
+		if (arr.type != DiannexValueType.Array)
+			throw "Array get on variable which is not an array";
+		ds_stack_push(stack, arr.value[ind]);
+	};
 
-global.__diannex_opcodes[DiannexOpcode.cmpgt] = function()
-{				
-	programCounter++;
-	var val2 = ds_stack_pop(stack);
-	var val1 = ds_stack_pop(stack);
-	if (val1.type == DiannexValueType.Double && val2.type == DiannexValueType.Integer)
-		ds_stack_push(stack, val1.compareGT(val2.convert(val1.type)));
-	else
-		ds_stack_push(stack, val1.convert(val2.type).compareGT(val2));
-};
+	global.__diannex_opcodes[DiannexOpcode.setarrind] = function()
+	{
+		programCounter++;
+		var value = ds_stack_pop(stack);
+		var ind = ds_stack_pop(stack).convert(DiannexValueType.Integer).getRawValue();
+		var arr = ds_stack_top(stack);
+		if (arr.type != DiannexValueType.Array)
+			throw "Array set on variable which is not an array";
+		arr.value[ind] = value;
+	};
 
-global.__diannex_opcodes[DiannexOpcode.cmplt] = function()
-{				
-	programCounter++;
-	var val2 = ds_stack_pop(stack);
-	var val1 = ds_stack_pop(stack);
-	if (val1.type == DiannexValueType.Double && val2.type == DiannexValueType.Integer)
-		ds_stack_push(stack, val1.compareLT(val2.convert(val1.type)));
-	else
-		ds_stack_push(stack, val1.convert(val2.type).compareLT(val2));
-};
+	global.__diannex_opcodes[DiannexOpcode.setvarglb] = function()
+	{
+		programCounter += 5;
+		variableSetHandler(data.strings[buffer_read(data.instructions, buffer_s32)], ds_stack_pop(stack).getRawValue());
+	};
 
-global.__diannex_opcodes[DiannexOpcode.cmpgte] = function()
-{				
-	programCounter++;
-	var val2 = ds_stack_pop(stack);
-	var val1 = ds_stack_pop(stack);
-	if (val1.type == DiannexValueType.Double && val2.type == DiannexValueType.Integer)
-		ds_stack_push(stack, val1.compareGTE(val2.convert(val1.type)));
-	else
-		ds_stack_push(stack, val1.convert(val2.type).compareGTE(val2));
-};
-
-global.__diannex_opcodes[DiannexOpcode.cmplte] = function()
-{				
-	programCounter++;
-	var val2 = ds_stack_pop(stack);
-	var val1 = ds_stack_pop(stack);
-	if (val1.type == DiannexValueType.Double && val2.type == DiannexValueType.Integer)
-		ds_stack_push(stack, val1.compareLTE(val2.convert(val1.type)));
-	else
-		ds_stack_push(stack, val1.convert(val2.type).compareLTE(val2));
-};
-
-global.__diannex_opcodes[DiannexOpcode.cmpneq] = function()
-{				
-	programCounter++;
-	var val2 = ds_stack_pop(stack);
-	var val1 = ds_stack_pop(stack);
-	if (val1.type == DiannexValueType.Double && val2.type == DiannexValueType.Integer)
-		ds_stack_push(stack, val1.compareNEQ(val2.convert(val1.type)));
-	else
-		ds_stack_push(stack, val1.convert(val2.type).compareNEQ(val2));
-};
-
-global.__diannex_opcodes[DiannexOpcode.j] = function()
-{
-	programCounter += (5 + buffer_read(data.instructions, buffer_s32));
+	global.__diannex_opcodes[DiannexOpcode.setvarloc] = function()
+	{
+		programCounter += 5;
+		var value = ds_stack_pop(stack);
+		var count = ds_list_size(locals);
 	
-};
+		var argIndex = buffer_read(data.instructions, buffer_s32);
+		if (argIndex >= count)
+		{
+			// Fill earlier local slots if necessary
+			repeat (argIndex - count)
+				ds_list_add(locals, new DiannexValue(undefined, DiannexValueType.Undefined));
+		
+			// Add new local
+			ds_list_add(locals, value);
+		}
+		else
+		{
+			// Set existing local
+			locals[| argIndex] = value;
+		}
+	};
 
-global.__diannex_opcodes[DiannexOpcode.jt] = function()
-{
-	var argJump = buffer_read(data.instructions, buffer_s32);
-	if (ds_stack_pop(stack).convert(DiannexValueType.Integer).value != 0)
-		programCounter += (5 + argJump);
-	else
-		programCounter += 5;
-};
-
-global.__diannex_opcodes[DiannexOpcode.jf] = function()
-{
-	var argJump = buffer_read(data.instructions, buffer_s32);
-	if (ds_stack_pop(stack).convert(DiannexValueType.Integer).value == 0)
-		programCounter += (5 + argJump);
-	else
-		programCounter += 5;
-};
-
-global.__diannex_opcodes[DiannexOpcode._exit] = function()
-{
-	programCounter++;
-	if (state == DiannexInterpreterState.Eval)
+	global.__diannex_opcodes[DiannexOpcode.pushvarglb] = function()
 	{
-		// Exit evaluation state
-		state = DiannexInterpreterState.Inactive;
-	}
-	else
+		programCounter += 5;
+		ds_stack_push(stack, variableGetHandler(data.strings[buffer_read(data.instructions, buffer_s32)]));
+	};
+
+	global.__diannex_opcodes[DiannexOpcode.pushvarloc] = function()
 	{
+		programCounter += 5;
+		var argIndex = buffer_read(data.instructions, buffer_s32);
+		if (argIndex >= ds_list_size(locals))
+			ds_stack_push(stack, new DiannexValue(undefined, DiannexValueType.Undefined));
+		ds_stack_push(stack, locals[| argIndex]);
+	};
+
+	global.__diannex_opcodes[DiannexOpcode.dup] = function()
+	{
+		programCounter++;
+		ds_stack_push(stack, ds_stack_top(stack));
+	};
+
+	global.__diannex_opcodes[DiannexOpcode.dup2] = function()
+	{
+		programCounter++;
+		var val1 = ds_stack_pop(stack);
+		var val2 = ds_stack_pop(stack);
+		ds_stack_push(stack, val2);
+		ds_stack_push(stack, val1);
+		ds_stack_push(stack, val2);
+		ds_stack_push(stack, val1);
+	};
+
+	global.__diannex_opcodes[DiannexOpcode.add] = function()
+	{				
+		programCounter++;
+		var val2 = ds_stack_pop(stack);
+		var val1 = ds_stack_pop(stack);
+		if (val1.type == DiannexValueType.String || (val1.type == DiannexValueType.Double && val2.type == DiannexValueType.Integer))
+			ds_stack_push(stack, val1.add(val2.convert(val1.type)));
+		else
+			ds_stack_push(stack, val1.convert(val2.type).add(val2));
+	};
+
+	global.__diannex_opcodes[DiannexOpcode.sub] = function()
+	{				
+		programCounter++;
+		var val2 = ds_stack_pop(stack);
+		var val1 = ds_stack_pop(stack);
+		if (val1.type == DiannexValueType.Double && val2.type == DiannexValueType.Integer)
+			ds_stack_push(stack, val1.subtract(val2.convert(val1.type)));
+		else
+			ds_stack_push(stack, val1.convert(val2.type).subtract(val2));
+	};
+
+	global.__diannex_opcodes[DiannexOpcode.mul] = function()
+	{				
+		programCounter++;
+		var val2 = ds_stack_pop(stack);
+		var val1 = ds_stack_pop(stack);
+		if (val1.type == DiannexValueType.Double && val2.type == DiannexValueType.Integer)
+			ds_stack_push(stack, val1.multiply(val2.convert(val1.type)));
+		else
+			ds_stack_push(stack, val1.convert(val2.type).multiply(val2));
+	};
+
+	global.__diannex_opcodes[DiannexOpcode._div] = function()
+	{				
+		programCounter++;
+		var val2 = ds_stack_pop(stack);
+		var val1 = ds_stack_pop(stack);
+		if (val1.type == DiannexValueType.Double && val2.type == DiannexValueType.Integer)
+			ds_stack_push(stack, val1.divide(val2.convert(val1.type)));
+		else
+			ds_stack_push(stack, val1.convert(val2.type).divide(val2));
+	};
+
+	global.__diannex_opcodes[DiannexOpcode._mod] = function()
+	{				
+		programCounter++;
+		var val2 = ds_stack_pop(stack);
+		var val1 = ds_stack_pop(stack);
+		if (val1.type == DiannexValueType.Double && val2.type == DiannexValueType.Integer)
+			ds_stack_push(stack, val1.modulo(val2.convert(val1.type)));
+		else
+			ds_stack_push(stack, val1.convert(val2.type).modulo(val2));
+	};
+
+	global.__diannex_opcodes[DiannexOpcode.neg] = function()
+	{
+		programCounter++;
+		var val1 = ds_stack_pop(stack);
+		switch (val1.type)
+		{
+			case DiannexValueType.Integer:
+				ds_stack_push(stack, new DiannexValue(-val1.value, DiannexValueType.Integer));
+				break;
+			case DiannexValueType.Double:
+				ds_stack_push(stack, new DiannexValue(-val1.value, DiannexValueType.Double));
+				break;
+			default:
+				throw "Cannot negate type " + __diannex_type_name(val1.type);
+		}
+	};
+
+	global.__diannex_opcodes[DiannexOpcode.inv] = function()
+	{
+		programCounter++;
+		var val1 = ds_stack_pop(stack);
+		switch (val1.type)
+		{
+			case DiannexValueType.Integer:
+				ds_stack_push(stack, new DiannexValue(!val1.value, DiannexValueType.Integer));
+				break;
+			case DiannexValueType.Double:
+				ds_stack_push(stack, new DiannexValue(!val1.value, DiannexValueType.Double));
+				break;
+			default:
+				throw "Cannot invert type " + __diannex_type_name(val1.type);
+		}
+	};
+
+	global.__diannex_opcodes[DiannexOpcode.bitls] = function()
+	{			
+		programCounter++;
+		var val2 = ds_stack_pop(stack);
+		var val1 = ds_stack_pop(stack);
+		ds_stack_push(stack, new DiannexValue(val1.convert(DiannexValueType.Integer).value << val2.convert(DiannexValueType.Integer).value, DiannexValueType.Integer));
+	};
+
+	global.__diannex_opcodes[DiannexOpcode.bitrs] = function()
+	{			
+		programCounter++;
+		var val2 = ds_stack_pop(stack);
+		var val1 = ds_stack_pop(stack);
+		ds_stack_push(stack, new DiannexValue(val1.convert(DiannexValueType.Integer).value >> val2.convert(DiannexValueType.Integer).value, DiannexValueType.Integer));
+	};
+
+	global.__diannex_opcodes[DiannexOpcode._bitand] = function()
+	{
+		programCounter++;
+		var val2 = ds_stack_pop(stack);
+		var val1 = ds_stack_pop(stack);
+		ds_stack_push(stack, new DiannexValue(val1.convert(DiannexValueType.Integer).value & val2.convert(DiannexValueType.Integer).value, DiannexValueType.Integer));
+	};
+
+	global.__diannex_opcodes[DiannexOpcode._bitor] = function()
+	{
+		programCounter++;
+		var val2 = ds_stack_pop(stack);
+		var val1 = ds_stack_pop(stack);
+		ds_stack_push(stack, new DiannexValue(val1.convert(DiannexValueType.Integer).value | val2.convert(DiannexValueType.Integer).value, DiannexValueType.Integer));
+	};
+
+	global.__diannex_opcodes[DiannexOpcode.bitxor] = function()
+	{
+		programCounter++;
+		var val2 = ds_stack_pop(stack);
+		var val1 = ds_stack_pop(stack);
+		ds_stack_push(stack, new DiannexValue(val1.convert(DiannexValueType.Integer).value ^ val2.convert(DiannexValueType.Integer).value, DiannexValueType.Integer));
+	};
+
+	global.__diannex_opcodes[DiannexOpcode.bitneg] = function()
+	{
+		programCounter++;
+		ds_stack_push(stack, new DiannexValue(~(ds_stack_pop(stack).convert(DiannexValueType.Integer).value), DiannexValueType.Integer));
+	};
+
+	global.__diannex_opcodes[DiannexOpcode.pow] = function()
+	{
+		programCounter++;
+		var val2 = ds_stack_pop(stack);
+		var val1 = ds_stack_pop(stack);
+		ds_stack_push(stack, new DiannexValue(power(val1.convert(DiannexValueType.Double).value, val2.convert(DiannexValueType.Double).value), DiannexValueType.Double));
+	};
+
+	global.__diannex_opcodes[DiannexOpcode.cmpeq] = function()
+	{				
+		programCounter++;
+		var val2 = ds_stack_pop(stack);
+		var val1 = ds_stack_pop(stack);
+		if (val1.type == DiannexValueType.Double && val2.type == DiannexValueType.Integer)
+			ds_stack_push(stack, val1.compareEQ(val2.convert(val1.type)));
+		else
+			ds_stack_push(stack, val1.convert(val2.type).compareEQ(val2));
+	};
+
+	global.__diannex_opcodes[DiannexOpcode.cmpgt] = function()
+	{				
+		programCounter++;
+		var val2 = ds_stack_pop(stack);
+		var val1 = ds_stack_pop(stack);
+		if (val1.type == DiannexValueType.Double && val2.type == DiannexValueType.Integer)
+			ds_stack_push(stack, val1.compareGT(val2.convert(val1.type)));
+		else
+			ds_stack_push(stack, val1.convert(val2.type).compareGT(val2));
+	};
+
+	global.__diannex_opcodes[DiannexOpcode.cmplt] = function()
+	{				
+		programCounter++;
+		var val2 = ds_stack_pop(stack);
+		var val1 = ds_stack_pop(stack);
+		if (val1.type == DiannexValueType.Double && val2.type == DiannexValueType.Integer)
+			ds_stack_push(stack, val1.compareLT(val2.convert(val1.type)));
+		else
+			ds_stack_push(stack, val1.convert(val2.type).compareLT(val2));
+	};
+
+	global.__diannex_opcodes[DiannexOpcode.cmpgte] = function()
+	{				
+		programCounter++;
+		var val2 = ds_stack_pop(stack);
+		var val1 = ds_stack_pop(stack);
+		if (val1.type == DiannexValueType.Double && val2.type == DiannexValueType.Integer)
+			ds_stack_push(stack, val1.compareGTE(val2.convert(val1.type)));
+		else
+			ds_stack_push(stack, val1.convert(val2.type).compareGTE(val2));
+	};
+
+	global.__diannex_opcodes[DiannexOpcode.cmplte] = function()
+	{				
+		programCounter++;
+		var val2 = ds_stack_pop(stack);
+		var val1 = ds_stack_pop(stack);
+		if (val1.type == DiannexValueType.Double && val2.type == DiannexValueType.Integer)
+			ds_stack_push(stack, val1.compareLTE(val2.convert(val1.type)));
+		else
+			ds_stack_push(stack, val1.convert(val2.type).compareLTE(val2));
+	};
+
+	global.__diannex_opcodes[DiannexOpcode.cmpneq] = function()
+	{				
+		programCounter++;
+		var val2 = ds_stack_pop(stack);
+		var val1 = ds_stack_pop(stack);
+		if (val1.type == DiannexValueType.Double && val2.type == DiannexValueType.Integer)
+			ds_stack_push(stack, val1.compareNEQ(val2.convert(val1.type)));
+		else
+			ds_stack_push(stack, val1.convert(val2.type).compareNEQ(val2));
+	};
+
+	global.__diannex_opcodes[DiannexOpcode.j] = function()
+	{
+		programCounter += (5 + buffer_read(data.instructions, buffer_s32));
+	
+	};
+
+	global.__diannex_opcodes[DiannexOpcode.jt] = function()
+	{
+		var argJump = buffer_read(data.instructions, buffer_s32);
+		if (ds_stack_pop(stack).convert(DiannexValueType.Integer).value != 0)
+			programCounter += (5 + argJump);
+		else
+			programCounter += 5;
+	};
+
+	global.__diannex_opcodes[DiannexOpcode.jf] = function()
+	{
+		var argJump = buffer_read(data.instructions, buffer_s32);
+		if (ds_stack_pop(stack).convert(DiannexValueType.Integer).value == 0)
+			programCounter += (5 + argJump);
+		else
+			programCounter += 5;
+	};
+
+	global.__diannex_opcodes[DiannexOpcode._exit] = function()
+	{
+		programCounter++;
+		if (state == DiannexInterpreterState.Eval)
+		{
+			// Exit evaluation state
+			state = DiannexInterpreterState.Inactive;
+		}
+		else
+		{
+			if (ds_stack_size(callStack) == 0)
+			{
+				// Nowhere else to exit to; end scene execution
+				endScene();
+			}
+			else
+			{
+				// Returning from a function
+				var lastFrame = ds_stack_pop(callStack);
+				programCounter = lastFrame.returnOffset;
+				ds_stack_destroy(stack);
+				stack = lastFrame.stack;
+				ds_list_destroy(locals);
+				locals = lastFrame.locals;
+				flagCount = lastFrame.flagCount;
+			
+				// No return value specified, so use undefined
+				ds_stack_push(stack, new DiannexValue(undefined, DiannexValueType.Undefined));
+			}
+		}
+	};
+
+	global.__diannex_opcodes[DiannexOpcode.ret] = function()
+	{
+		programCounter++;
+	
 		if (ds_stack_size(callStack) == 0)
 		{
 			// Nowhere else to exit to; end scene execution
@@ -536,184 +568,161 @@ global.__diannex_opcodes[DiannexOpcode._exit] = function()
 		else
 		{
 			// Returning from a function
+			var returnValue = ds_stack_pop(stack);
+				
 			var lastFrame = ds_stack_pop(callStack);
-			programCounter = lastFrame.returnOffset;
+			programCounter = lastFrame.returnTo;
 			ds_stack_destroy(stack);
 			stack = lastFrame.stack;
 			ds_list_destroy(locals);
 			locals = lastFrame.locals;
-			flagCount = lastFrame.flagCount;
-			
-			// No return value specified, so use undefined
-			ds_stack_push(stack, new DiannexValue(undefined, DiannexValueType.Undefined));
+		
+			// Push return value to calling frames' stack
+			ds_stack_push(stack, returnValue);
 		}
-	}
-};
+	};
 
-global.__diannex_opcodes[DiannexOpcode.ret] = function()
-{
-	programCounter++;
-	
-	if (ds_stack_size(callStack) == 0)
+	global.__diannex_opcodes[DiannexOpcode.call] = function()
 	{
-		// Nowhere else to exit to; end scene execution
-		endScene();
-	}
-	else
+		programCounter += 9;
+	
+		var argFuncIndex = buffer_read(data.instructions, buffer_s32);
+		var argCount = buffer_read(data.instructions, buffer_s32);
+	
+		var args = array_create(argCount);
+		for (var i = 0; i < argCount; i++) // arguments in stack are in correct order
+			args[i] = ds_stack_pop(stack);
+			
+		ds_stack_push(callStack, new DiannexStackFrame(programCounter, stack, locals, flagCount));
+		var func = data.functions[argFuncIndex];
+		programCounter = func.codeOffset;
+		stack = ds_stack_create();
+		locals = ds_list_create();
+		
+		// Load flags into local variables
+		var flagNames = func.flagNames;
+		flagCount = array_length(flagNames);
+		for (var i = 0; i < flagCount; i++)
+			ds_list_add(locals, new DiannexValue(data.getFlagHandler(flagNames[i])));
+	
+		// Load arguments into local variables
+		for (var i = 0; i < argCount; i++)
+			ds_list_add(locals, args[i]);
+	};
+
+	global.__diannex_opcodes[DiannexOpcode.callext] = function()
 	{
-		// Returning from a function
-		var returnValue = ds_stack_pop(stack);
-				
-		var lastFrame = ds_stack_pop(callStack);
-		programCounter = lastFrame.returnTo;
-		ds_stack_destroy(stack);
-		stack = lastFrame.stack;
-		ds_list_destroy(locals);
-		locals = lastFrame.locals;
+		programCounter += 9;
+	
+		var argFuncName = data.strings[buffer_read(data.instructions, buffer_s32)];
+		var argCount = buffer_read(data.instructions, buffer_s32);
+	
+		var args = array_create(argCount);
+		for (var i = 0; i < argCount; i++) // arguments in stack are in correct order
+			args[i] = ds_stack_pop(stack);
 		
-		// Push return value to calling frames' stack
-		ds_stack_push(stack, returnValue);
-	}
-};
+		var handler = functionHandlers[$ argFuncName] ?? unregisteredFunctionHandler;
+		ds_stack_push(stack, new DiannexValue(script_execute_ext(handler, args)));
+	};
 
-global.__diannex_opcodes[DiannexOpcode.call] = function()
-{
-	programCounter += 9;
+	global.__diannex_opcodes[DiannexOpcode.choicebeg] = function()
+	{
+		if (state != DiannexInterpreterState.Running || startingChoice)
+			throw "Invalid choice begin state";
 	
-	var argFuncIndex = buffer_read(data.instructions, buffer_s32);
-	var argCount = buffer_read(data.instructions, buffer_s32);
+		programCounter++;
+		startingChoice = true;
+	};
+
+	global.__diannex_opcodes[DiannexOpcode.choiceadd] = function()
+	{
+		if (!startingChoice)
+			throw "Invalid choice add state";
 	
-	var args = array_create(argCount);
-	for (var i = 0; i < argCount; i++) // arguments in stack are in correct order
-		args[i] = ds_stack_pop(stack);
+		programCounter += 5;
+	
+		var chance = ds_stack_pop(stack).convert(DiannexValueType.Double).value;
+		var text = ds_stack_pop(stack).value;
+		if (chanceHandler(chance))
+			ds_list_add(choiceOptions, new DiannexChoice(programCounter + buffer_read(buff, buffer_s32), text)); 
+		startingChoice = true;
+	};
+
+	global.__diannex_opcodes[DiannexOpcode.choiceaddt] = function()
+	{
+		if (!startingChoice)
+			throw "Invalid choice add state";
+	
+		programCounter += 5;
+	
+		var condition = ds_stack_pop(stack).convert(DiannexValueType.Integer).value;
+		var chance = ds_stack_pop(stack).convert(DiannexValueType.Double).value;
+		var text = ds_stack_pop(stack).value;
+		if (condition.val != 0 && chanceHandler(chance))
+			ds_list_add(choiceOptions, new DiannexChoice(programCounter + buffer_read(buff, buffer_s32), text)); 
+		startingChoice = true;
+	};
+
+	global.__diannex_opcodes[DiannexOpcode.choicesel] = function()
+	{
+		programCounter++;
+	
+		if (!startingChoice)
+			throw "Invalid choice selection state";
+		if (ds_list_size(choiceOptions) == 0)
+			throw "Choice statement has no choices to present";
+		
+		startingChoice = false;
+		state = DiannexInterpreterState.InChoice;
 			
-	ds_stack_push(callStack, new DiannexStackFrame(programCounter, stack, locals, flagCount));
-	var func = data.functions[argFuncIndex];
-	programCounter = func.codeOffset;
-	stack = ds_stack_create();
-	locals = ds_list_create();
-		
-	// Load flags into local variables
-	var flagNames = func.flagNames;
-	flagCount = array_length(flagNames);
-	for (var i = 0; i < flagCount; i++)
-		ds_list_add(locals, new DiannexValue(data.getFlagHandler(flagNames[i])));
-	
-	// Load arguments into local variables
-	for (var i = 0; i < argCount; i++)
-		ds_list_add(locals, args[i]);
-};
+		var count = ds_list_size(choiceOptions);
+		var textChoices = array_create(count);
+		for (var i = 0; i < count; i++)
+			textChoices[i] = choiceOptions[| i].text;
+		choiceHandler(textChoices);
+	};
 
-global.__diannex_opcodes[DiannexOpcode.callext] = function()
-{
-	programCounter += 9;
-	
-	var argFuncName = data.strings[buffer_read(data.instructions, buffer_s32)];
-	var argCount = buffer_read(data.instructions, buffer_s32);
-	
-	var args = array_create(argCount);
-	for (var i = 0; i < argCount; i++) // arguments in stack are in correct order
-		args[i] = ds_stack_pop(stack);
-		
-	var handler = functionHandlers[$ argFuncName] ?? unregisteredFunctionHandler;
-	ds_stack_push(stack, new DiannexValue(script_execute_ext(handler, args)));
-};
+	global.__diannex_opcodes[DiannexOpcode.chooseadd] = function(buff)
+	{
+		programCounter += 5;
+		ds_list_add(chooseOptions, new DiannexChooseEntry(programCounter + buffer_read(buff, buffer_s32), 
+													      ds_stack_pop(stack).convert(DiannexValueType.Double).value));
+	};
 
-global.__diannex_opcodes[DiannexOpcode.choicebeg] = function()
-{
-	if (state != DiannexInterpreterState.Running || startingChoice)
-		throw "Invalid choice begin state";
-	
-	programCounter++;
-	startingChoice = true;
-};
+	global.__diannex_opcodes[DiannexOpcode.chooseaddt] = function(buff)
+	{
+		programCounter += 5;
+		var condition = ds_stack_pop(stack).convert(DiannexValueType.Integer).value;
+		var chance = ds_stack_pop(stack).convert(DiannexValueType.Double).value;
+		if (condition != 0)
+			ds_list_add(chooseOptions, new DiannexChooseEntry(programCounter + buffer_read(buff, buffer_s32), chance));
+	};
 
-global.__diannex_opcodes[DiannexOpcode.choiceadd] = function()
-{
-	if (!startingChoice)
-		throw "Invalid choice add state";
+	global.__diannex_opcodes[DiannexOpcode.choosesel] = function(buff)
+	{
+		programCounter++;
 	
-	programCounter += 5;
+		var count = ds_list_size(chooseOptions);
+		if (count == 0)
+			throw "No entries for choose statement";
 	
-	var chance = ds_stack_pop(stack).convert(DiannexValueType.Double).value;
-	var text = ds_stack_pop(stack).value;
-	if (chanceHandler(chance))
-		ds_list_add(choiceOptions, new DiannexChoice(programCounter + buffer_read(buff, buffer_s32), text)); 
-	startingChoice = true;
-};
+		var chooseWeights = array_create(count);
+		for (var i = 0; i < count; i++)
+			chooseWeights[i] = chooseOptions[| i].chance;
+	
+		programCounter = chooseOptions[| weightedChanceHandler(chooseWeights)].targetOffset;
+		ds_list_clear(chooseOptions);
+	};
 
-global.__diannex_opcodes[DiannexOpcode.choiceaddt] = function()
-{
-	if (!startingChoice)
-		throw "Invalid choice add state";
+	global.__diannex_opcodes[DiannexOpcode.textrun] = function()
+	{
+		if (state != DiannexInterpreterState.Running)
+			throw "Invalid text run state";
 	
-	programCounter += 5;
+		programCounter++;
+		state = DiannexInterpreterState.InText;
+		textHandler(ds_stack_pop(stack).convert(DiannexValueType.String).getRawValue());
+	};
 	
-	var condition = ds_stack_pop(stack).convert(DiannexValueType.Integer).value;
-	var chance = ds_stack_pop(stack).convert(DiannexValueType.Double).value;
-	var text = ds_stack_pop(stack).value;
-	if (condition.val != 0 && chanceHandler(chance))
-		ds_list_add(choiceOptions, new DiannexChoice(programCounter + buffer_read(buff, buffer_s32), text)); 
-	startingChoice = true;
-};
-
-global.__diannex_opcodes[DiannexOpcode.choicesel] = function()
-{
-	programCounter++;
-	
-	if (!startingChoice)
-		throw "Invalid choice selection state";
-	if (ds_list_size(choiceOptions) == 0)
-		throw "Choice statement has no choices to present";
-		
-	startingChoice = false;
-	state = DiannexInterpreterState.InChoice;
-			
-	var count = ds_list_size(choiceOptions);
-	var textChoices = array_create(count);
-	for (var i = 0; i < count; i++)
-		textChoices[i] = choiceOptions[| i].text;
-	choiceHandler(textChoices);
-};
-
-global.__diannex_opcodes[DiannexOpcode.chooseadd] = function(buff)
-{
-	programCounter += 5;
-	ds_list_add(chooseOptions, new DiannexChooseEntry(programCounter + buffer_read(buff, buffer_s32), 
-												      ds_stack_pop(stack).convert(DiannexValueType.Double).value));
-};
-
-global.__diannex_opcodes[DiannexOpcode.chooseaddt] = function(buff)
-{
-	programCounter += 5;
-	var condition = ds_stack_pop(stack).convert(DiannexValueType.Integer).value;
-	var chance = ds_stack_pop(stack).convert(DiannexValueType.Double).value;
-	if (condition != 0)
-		ds_list_add(chooseOptions, new DiannexChooseEntry(programCounter + buffer_read(buff, buffer_s32), chance));
-};
-
-global.__diannex_opcodes[DiannexOpcode.choosesel] = function(buff)
-{
-	programCounter++;
-	
-	var count = ds_list_size(chooseOptions);
-	if (count == 0)
-		throw "No entries for choose statement";
-	
-	var chooseWeights = array_create(count);
-	for (var i = 0; i < count; i++)
-		chooseWeights[i] = chooseOptions[| i].chance;
-	
-	programCounter = chooseOptions[| weightedChanceHandler(chooseWeights)].targetOffset;
-	ds_list_clear(chooseOptions);
-};
-
-global.__diannex_opcodes[DiannexOpcode.textrun] = function()
-{
-	if (state != DiannexInterpreterState.Running)
-		throw "Invalid text run state";
-	
-	programCounter++;
-	state = DiannexInterpreterState.InText;
-	textHandler(ds_stack_pop(stack).convert(DiannexValueType.String).getRawValue());
-};
+	initialized = true;
+}

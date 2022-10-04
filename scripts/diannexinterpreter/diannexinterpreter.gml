@@ -177,6 +177,13 @@ function DiannexInterpreter(binary) constructor
 		{
 			state = DiannexInterpreterState.Running;
 		}
+		
+		var buff = data.instructions;
+		while (state == DiannexInterpreterState.Running)
+		{
+			buffer_seek(buff, buffer_seek_start, programCounter);
+			opcodes[buffer_read(buff, buffer_u8)](buff);
+		}
 	};
 	
 	static endScene = function()
@@ -195,6 +202,13 @@ function DiannexInterpreter(binary) constructor
 		
 		programCounter = choiceOptions[| index].targetOffset;
 		ds_list_clear(choiceOptions);
+		
+		var buff = data.instructions;
+		while (state == DiannexInterpreterState.Running)
+		{
+			buffer_seek(buff, buffer_seek_start, programCounter);
+			opcodes[buffer_read(buff, buffer_u8)](buff);
+		}
 	};
 	
 	static getDefinition = function(name)

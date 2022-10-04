@@ -172,8 +172,11 @@ function DiannexInterpreter(binary) constructor
 	
 	static resumeScene = function()
 	{
-		if (state == DiannexInterpreterState.Paused)
+		if (state == DiannexInterpreterState.Paused ||
+			state == DiannexInterpreterState.InText)
+		{
 			state = DiannexInterpreterState.Running;
+		}
 	};
 	
 	static endScene = function()

@@ -262,7 +262,7 @@ function __diannex_get_opcodes()
 	opcodes[DiannexOpcode.pushvarglb] = function()
 	{
 		programCounter += 5;
-		ds_stack_push(stack, variableGetHandler(data.strings[buffer_read(data.instructions, buffer_s32)]));
+		ds_stack_push(stack, new DiannexValue(variableGetHandler(data.strings[buffer_read(data.instructions, buffer_s32)])));
 	};
 
 	opcodes[DiannexOpcode.pushvarloc] = function()
